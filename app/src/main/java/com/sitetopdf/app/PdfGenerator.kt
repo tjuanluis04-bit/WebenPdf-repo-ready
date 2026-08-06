@@ -3,6 +3,10 @@ package com.sitetopdf.app
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.http.SslError
+import android.webkit.SslErrorHandler
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
@@ -54,7 +58,24 @@ object PdfGenerator {
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    suspend fun loadPage(webView: WebView, url: String, timeoutMs: Long = 25_000): Boolean =
+    /**
+     * Carga una URL en el WebView. Si falla (certificado inválido, sitio sin HTTPS,
+     * error de conexión), acepta certificados con problemas y reintenta una vez
+     * cambiando de esquema (https↔http), ya que varios sitios antiguos solo
+     * responden por uno de los dos.
+     */
+    suspend fun loadPage(webView: WebView, url: String, timeoutMs: Long = 25_000): Boolean {
+        if (loadPageOnce(webView, url, timeoutMs)) return true
+
+        val altUrl = when {
+            url.startsWith("https://") -> "http://" + url.removePrefix("https://")
+            url.startsWith("http://") -> "https://" + url.removePrefix("http://")
+            else -> return false
+        }
+        return loadPageOnce(webView, altUrl, timeoutMs)
+    }
+
+    private suspend fun loadPageOnce(webView: WebView, url: String, timeoutMs: Long): Boolean =
         suspendCancellableCoroutine { cont ->
             var finished = false
             webView.webViewClient = object : WebViewClient() {
@@ -66,9 +87,25 @@ object PdfGenerator {
                 }
 
                 override fun onReceivedError(
-                    view: WebView?, errorCode: Int, description: String?, failingUrl: String?
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    error: WebResourceError?
                 ) {
-                    if (!finished) { finished = true; if (cont.isActive) cont.resume(false) }
+                    val isMainFrame = request?.isForMainFrame ?: true
+                    if (isMainFrame && !finished) {
+                        finished = true
+                        if (cont.isActive) cont.resume(false)
+                    }
+                }
+
+                override fun onReceivedSslError(
+                    view: WebView?,
+                    handler: SslErrorHandler?,
+                    error: SslError?
+                ) {
+                    // El usuario eligió este sitio explícitamente; aceptamos el
+                    // certificado en vez de cancelar la carga en silencio.
+                    handler?.proceed()
                 }
             }
             webView.loadUrl(url)
