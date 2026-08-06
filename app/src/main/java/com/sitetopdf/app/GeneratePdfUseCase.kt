@@ -25,7 +25,7 @@ suspend fun generatePdf(
         if (loaded) {
             onProgress((index + 0.5f) / total.toFloat(), "Generando página ${index + 1} de $total")
             val partFile = File(tempDir, "page-${index.toString().padStart(4, '0')}.pdf")
-            val ok = PdfGenerator.renderToPdf(webView, partFile)
+            val ok = PdfGenerator.renderToPdf(context, webView, partFile)
             if (ok) partFiles.add(partFile)
         }
     }
