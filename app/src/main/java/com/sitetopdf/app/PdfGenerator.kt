@@ -77,9 +77,33 @@ object PdfGenerator {
             }, timeoutMs)
         }
 
-    /** Extrae los enlaces (href absolutos) de la página actualmente cargada. */
+    /** Extrae los enlaces (href absolutos) de la página actualmente cargada, incluyendo frames/iframes. */
     suspend fun extractLinks(webView: WebView): List<String> = suspendCancellableCoroutine { cont ->
-        val js = "JSON.stringify(Array.from(document.querySelectorAll('a[href]')).map(function(a){return a.href;}))"
+        val js = """
+            (function() {
+                var out = [];
+                var visitedDocs = [];
+                function collect(doc) {
+                    if (!doc || visitedDocs.indexOf(doc) !== -1) return;
+                    visitedDocs.push(doc);
+                    try {
+                        var anchors = doc.querySelectorAll('a[href]');
+                        for (var i = 0; i < anchors.length; i++) out.push(anchors[i].href);
+                    } catch (e) {}
+                    try {
+                        var frames = doc.querySelectorAll('frame, iframe');
+                        for (var j = 0; j < frames.length; j++) {
+                            try {
+                                var innerDoc = frames[j].contentDocument;
+                                if (innerDoc) collect(innerDoc);
+                            } catch (e) {}
+                        }
+                    } catch (e) {}
+                }
+                collect(document);
+                return JSON.stringify(out);
+            })();
+        """.trimIndent()
         webView.evaluateJavascript(js) { raw ->
             try {
                 val arr = JSONArray(unescapeJs(raw))
@@ -92,7 +116,11 @@ object PdfGenerator {
         }
     }
 
-    /** Extrae el contenido en orden: encabezados, párrafos (con enlaces por palabra) e imágenes. */
+    /**
+     * Extrae el contenido en orden: encabezados, párrafos (con enlaces por palabra) e imágenes.
+     * Entra recursivamente en <frame>/<iframe> del mismo dominio, ya que varios sitios antiguos
+     * (como el de este caso) guardan el contenido real dentro de un frame en vez del documento raíz.
+     */
     suspend fun extractBlocks(webView: WebView): List<Block> = suspendCancellableCoroutine { cont ->
         val js = """
             (function() {
@@ -116,6 +144,7 @@ object PdfGenerator {
                 var headingTags = {H1:1,H2:2,H3:3,H4:4,H5:5,H6:6};
 
                 function visit(node, href) {
+                    if (!node) return;
                     if (node.nodeType === 3) {
                         var t = node.textContent.replace(/\s+/g, ' ');
                         if (t.trim().length > 0) runs.push({text: t, href: href || null});
@@ -127,6 +156,15 @@ object PdfGenerator {
                     var cs = null;
                     try { cs = window.getComputedStyle(node); } catch (e) {}
                     if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) return;
+
+                    if (tag === 'FRAME' || tag === 'IFRAME') {
+                        flush();
+                        try {
+                            var innerDoc = node.contentDocument;
+                            if (innerDoc) visit(innerDoc.body || innerDoc.documentElement, href);
+                        } catch (e) {}
+                        return;
+                    }
 
                     if (tag === 'IMG') {
                         flush();
@@ -156,7 +194,7 @@ object PdfGenerator {
                     for (var k = 0; k < node.childNodes.length; k++) visit(node.childNodes[k], newHref);
                 }
 
-                visit(document.body, null);
+                visit(document.body || document.documentElement, null);
                 flush();
                 return JSON.stringify(blocks);
             })();
