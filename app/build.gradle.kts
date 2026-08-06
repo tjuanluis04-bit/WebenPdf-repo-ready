@@ -61,8 +61,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    // Rastreo del sitio (HTML parsing + HTTP)
-    implementation("org.jsoup:jsoup:1.17.2")
+    // Descarga de imágenes para el PDF
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 

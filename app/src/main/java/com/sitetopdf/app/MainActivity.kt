@@ -33,7 +33,7 @@ import java.io.File
 
 sealed class AppState {
     data object Idle : AppState()
-    data object Crawling : AppState()
+    data class Crawling(val visited: Int, val currentUrl: String) : AppState()
     data class Crawled(val pages: List<PageItem>) : AppState()
     data class Generating(val progress: Float, val text: String) : AppState()
     data class Done(val file: File) : AppState()
@@ -123,12 +123,17 @@ fun SiteToPdfApp() {
                                     appState = AppState.Error("Escribe una URL válida, por ejemplo https://ejemplo.com")
                                     return@Button
                                 }
-                                appState = AppState.Crawling
+                                appState = AppState.Crawling(0, normalized)
                                 scope.launch {
-                                    val crawler = SiteCrawler(maxPages = 200, sameOriginOnly = true)
-                                    val discovered = crawler.crawl(normalized)
+                                    val crawler = SiteCrawler(webView, maxPages = 200, sameOriginOnly = true)
+                                    val discovered = crawler.crawl(normalized) { visited, currentUrl ->
+                                        appState = AppState.Crawling(visited, currentUrl)
+                                    }
                                     if (discovered.isEmpty()) {
-                                        appState = AppState.Error("No se encontraron páginas en ese sitio.")
+                                        appState = AppState.Error(
+                                            "No se pudo cargar ninguna página de ese sitio. Puede ser un problema de conexión, " +
+                                                "que el sitio bloquee la carga, o que no tenga contenido accesible."
+                                        )
                                     } else {
                                         pages = discovered.map { PageItem(it.url, it.title, true) }
                                         appState = AppState.Crawled(pages)
@@ -158,7 +163,16 @@ fun SiteToPdfApp() {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 CircularProgressIndicator()
                                 Spacer(Modifier.height(12.dp))
-                                Text("Rastreando el sitio y siguiendo enlaces…", style = MaterialTheme.typography.bodyMedium)
+                                val label = if (state.visited == 0) "Cargando la página inicial…"
+                                else "Página ${state.visited} encontrada…"
+                                Text(label, style = MaterialTheme.typography.bodyMedium)
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    state.currentUrl,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline,
+                                    maxLines = 1
+                                )
                             }
                         }
                     }
