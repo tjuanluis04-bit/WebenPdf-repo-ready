@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import android.webkit.WebView
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 suspend fun generatePdf(
@@ -26,12 +27,21 @@ suspend fun generatePdf(
     items.forEachIndexed { index, item ->
         try {
             onProgress(index / total.toFloat(), "Cargando ${index + 1} de $total: ${item.title}")
-            val loaded = PdfGenerator.loadPage(webView, item.url)
-            if (loaded) {
-                onProgress((index + 0.5f) / total.toFloat(), "Generando página ${index + 1} de $total")
-                val partFile = File(tempDir, "page-${index.toString().padStart(4, '0')}.pdf")
-                val ok = PdfGenerator.renderToPdf(context, webView, partFile)
-                if (ok) partFiles.add(partFile)
+
+            // Red de seguridad: pase lo que pase por dentro (incluso un cuelgue que no
+            // debería ocurrir), esta página nunca bloquea la generación por más de 60s.
+            val completed = withTimeoutOrNull(60_000L) {
+                val loaded = PdfGenerator.loadPage(webView, item.url)
+                if (loaded) {
+                    onProgress((index + 0.5f) / total.toFloat(), "Generando página ${index + 1} de $total")
+                    val partFile = File(tempDir, "page-${index.toString().padStart(4, '0')}.pdf")
+                    val ok = PdfGenerator.renderToPdf(context, webView, partFile)
+                    if (ok) partFiles.add(partFile)
+                }
+                true
+            }
+            if (completed == null) {
+                webView.stopLoading()
             }
         } catch (e: Throwable) {
             // Se salta esta página (incluye errores de memoria) y sigue con las demás,

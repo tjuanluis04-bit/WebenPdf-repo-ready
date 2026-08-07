@@ -64,7 +64,7 @@ object PdfGenerator {
      * cambiando de esquema (https↔http), ya que varios sitios antiguos solo
      * responden por uno de los dos.
      */
-    suspend fun loadPage(webView: WebView, url: String, timeoutMs: Long = 25_000): Boolean {
+    suspend fun loadPage(webView: WebView, url: String, timeoutMs: Long = 12_000): Boolean {
         if (loadPageOnce(webView, url, timeoutMs)) return true
 
         val altUrl = when {

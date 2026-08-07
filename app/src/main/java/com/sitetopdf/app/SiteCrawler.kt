@@ -1,6 +1,7 @@
 package com.sitetopdf.app
 
 import android.webkit.WebView
+import kotlinx.coroutines.withTimeoutOrNull
 import java.net.URI
 
 data class DiscoveredPage(val url: String, val title: String)
@@ -34,17 +35,26 @@ class SiteCrawler(
             visited.add(current)
             onProgress(visited.size, current)
 
-            val loaded = PdfGenerator.loadPage(webView, current)
-            if (!loaded) continue
+            try {
+                // Red de seguridad: una página problemática no debe congelar el rastreo entero.
+                val completed = withTimeoutOrNull(60_000L) {
+                    val loaded = PdfGenerator.loadPage(webView, current)
+                    if (loaded) {
+                        val title = webView.title?.takeIf { it.isNotBlank() } ?: current
+                        result.add(DiscoveredPage(current, title))
 
-            val title = webView.title?.takeIf { it.isNotBlank() } ?: current
-            result.add(DiscoveredPage(current, title))
-
-            val links = PdfGenerator.extractLinks(webView)
-            for (href in links) {
-                val abs = normalize(href, current) ?: continue
-                if (sameOriginOnly && originOf(abs) != origin) continue
-                if (!visited.contains(abs) && !queue.contains(abs)) queue.add(abs)
+                        val links = PdfGenerator.extractLinks(webView)
+                        for (href in links) {
+                            val abs = normalize(href, current) ?: continue
+                            if (sameOriginOnly && originOf(abs) != origin) continue
+                            if (!visited.contains(abs) && !queue.contains(abs)) queue.add(abs)
+                        }
+                    }
+                    true
+                }
+                if (completed == null) webView.stopLoading()
+            } catch (e: Throwable) {
+                // Se salta esta página y sigue con las demás.
             }
         }
         return result
