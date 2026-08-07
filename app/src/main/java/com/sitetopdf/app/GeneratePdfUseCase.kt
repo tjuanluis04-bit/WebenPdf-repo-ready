@@ -7,6 +7,8 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import android.webkit.WebView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
@@ -69,7 +71,7 @@ suspend fun generatePdf(
 
     val displayName = siteDisplayName(siteUrl)
     val uri = try {
-        saveToDownloads(context, mergedFile, displayName)
+        withContext(Dispatchers.IO) { saveToDownloads(context, mergedFile, displayName) }
     } catch (e: Throwable) {
         null
     }

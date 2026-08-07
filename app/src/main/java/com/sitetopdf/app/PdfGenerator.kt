@@ -289,40 +289,53 @@ object PdfGenerator {
         }
     }
 
-    /** Genera un PDF de texto real (una o varias páginas A4) a partir del contenido actual del WebView. */
+    /**
+     * Genera un PDF de texto real (una o varias páginas A4) a partir del contenido actual del WebView.
+     *
+     * `extractBlocks` necesita el hilo principal (llama al WebView), pero todo el trabajo pesado
+     * de construir el PDF (medir texto, dibujar, comprimir imágenes, guardar a disco) se hace en
+     * un hilo de fondo: si corre en el hilo principal, una página con mucho contenido puede
+     * bloquearlo el tiempo suficiente para que Android mate la app por "no responde" (ANR).
+     */
     suspend fun renderToPdf(context: Context, webView: WebView, outputFile: File): Boolean {
-        return try {
-            PDFBoxResourceLoader.init(context.applicationContext)
-            val blocks = extractBlocks(webView)
-            if (blocks.isEmpty()) return false
+        val blocks = try {
+            extractBlocks(webView)
+        } catch (e: Throwable) {
+            emptyList()
+        }
+        if (blocks.isEmpty()) return false
 
-            val document = PDDocument()
-            val writer = PdfPageWriter(document)
+        return withContext(Dispatchers.Default) {
+            try {
+                PDFBoxResourceLoader.init(context.applicationContext)
+                val document = PDDocument()
+                val writer = PdfPageWriter(document)
 
-            for (block in blocks) {
-                when (block) {
-                    is Block.Text -> writer.drawText(block)
-                    is Block.Image -> {
-                        val bitmap = downloadBitmap(block.src)
-                        if (bitmap != null) {
-                            writer.drawImage(bitmap)
-                            bitmap.recycle()
+                for (block in blocks) {
+                    when (block) {
+                        is Block.Text -> writer.drawText(block)
+                        is Block.Image -> {
+                            val bitmap = downloadBitmap(block.src)
+                            if (bitmap != null) {
+                                writer.drawImage(bitmap)
+                                bitmap.recycle()
+                            }
                         }
                     }
                 }
+                writer.finish()
+                document.save(outputFile)
+                document.close()
+                true
+            } catch (e: Throwable) {
+                // Incluye OutOfMemoryError: una página problemática no debe tumbar la app.
+                false
             }
-            writer.finish()
-            document.save(outputFile)
-            document.close()
-            true
-        } catch (e: Throwable) {
-            // Incluye OutOfMemoryError: una página problemática no debe tumbar la app.
-            false
         }
     }
 
-    fun mergePdfs(context: Context, sourceFiles: List<File>, outputFile: File): Boolean {
-        return try {
+    suspend fun mergePdfs(context: Context, sourceFiles: List<File>, outputFile: File): Boolean = withContext(Dispatchers.IO) {
+        try {
             PDFBoxResourceLoader.init(context.applicationContext)
             val merger = PDFMergerUtility()
             sourceFiles.forEach { merger.addSource(it) }
