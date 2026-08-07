@@ -56,3 +56,11 @@ La primera versión usaba un cliente HTTP simple (sin JavaScript, sin comportars
 - El texto se dibuja con la fuente estándar Helvetica (cubre español con tildes y eñes sin problema). Caracteres muy poco comunes fuera de Latin-1 se sustituyen por `?` para no romper la generación.
 - Sitios que requieren login, o con protecciones muy agresivas (challenge de JavaScript tipo "verificando tu navegador"), pueden seguir sin ser accesibles.
 - El PDF se guarda en `Android/data/com.sitetopdf.app/files/SiteToPDF/` y se comparte vía `FileProvider`.
+
+## Guardado y estabilidad (última actualización)
+
+- El PDF final se guarda directamente en la carpeta pública **Descargas** del teléfono, con el nombre del dominio del sitio (ej. `menstribune.com.pdf`).
+- `minSdk` subido a 29 (Android 10+) para poder escribir en Descargas sin pedir permisos de almacenamiento heredados — simplifica y evita otra fuente de fallos. Si necesitas soportar Android 8/9, avísame y lo adaptamos con el flujo de permisos clásico.
+- Las imágenes se incrustan comprimidas en JPEG (antes se guardaban sin comprimir), lo que baja mucho el uso de memoria en sitios con muchas páginas/imágenes.
+- Si una página individual falla (por red, memoria, contenido raro), se salta y se sigue con las demás en vez de tumbar toda la generación — antes un error de memoria (`OutOfMemoryError`) no se capturaba y cerraba la app por completo.
+- `android:largeHeap="true"` habilitado para darle más margen de memoria al proceso.

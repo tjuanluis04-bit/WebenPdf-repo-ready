@@ -17,7 +17,7 @@ import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
-import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
+import com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory
 import com.tom_roush.pdfbox.pdmodel.interactive.action.PDActionURI
 import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink
 import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDBorderStyleDictionary
@@ -270,7 +270,7 @@ object PdfGenerator {
         return s.replace("\\\"", "\"").replace("\\\\", "\\")
     }
 
-    private suspend fun downloadBitmap(url: String, maxWidthPx: Int = 900): Bitmap? = withContext(Dispatchers.IO) {
+    private suspend fun downloadBitmap(url: String, maxWidthPx: Int = 700): Bitmap? = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0 (Android)").build()
             httpClient.newCall(request).execute().use { response ->
@@ -283,7 +283,8 @@ object PdfGenerator {
                 val opts = BitmapFactory.Options().apply { inSampleSize = sample }
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // Incluye OutOfMemoryError: una imagen pesada no debe tumbar toda la generación.
             null
         }
     }
@@ -314,7 +315,8 @@ object PdfGenerator {
             document.save(outputFile)
             document.close()
             true
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // Incluye OutOfMemoryError: una página problemática no debe tumbar la app.
             false
         }
     }
@@ -327,7 +329,7 @@ object PdfGenerator {
             merger.destinationFileName = outputFile.absolutePath
             merger.mergeDocuments(MemoryUsageSetting.setupTempFileOnly())
             true
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             false
         }
     }
@@ -426,9 +428,11 @@ private class PdfPageWriter(private val document: PDDocument) {
         }
         ensureSpace(h + 6f)
         try {
-            val image = LosslessFactory.createFromImage(document, bitmap)
+            val image = JPEGFactory.createFromImage(document, bitmap, 0.75f)
             stream.drawImage(image, marginX, cursorY - h, w, h)
-        } catch (e: Exception) { /* omite la imagen si falla */ }
+        } catch (e: Throwable) {
+            // Incluye OutOfMemoryError: omite la imagen si falla y sigue con el resto de la página.
+        }
         cursorY -= (h + 12f)
     }
 

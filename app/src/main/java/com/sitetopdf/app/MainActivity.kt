@@ -2,6 +2,7 @@
 
 package com.sitetopdf.app
 
+import android.net.Uri
 import android.os.Bundle
 import android.webkit.WebView
 import androidx.activity.ComponentActivity
@@ -29,14 +30,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.sitetopdf.app.ui.theme.SiteToPdfTheme
 import kotlinx.coroutines.launch
-import java.io.File
 
 sealed class AppState {
     data object Idle : AppState()
     data class Crawling(val visited: Int, val currentUrl: String) : AppState()
     data class Crawled(val pages: List<PageItem>) : AppState()
     data class Generating(val progress: Float, val text: String) : AppState()
-    data class Done(val file: File) : AppState()
+    data class Done(val uri: Uri, val displayName: String) : AppState()
     data class Error(val message: String) : AppState()
 }
 
@@ -65,6 +65,7 @@ fun SiteToPdfApp() {
     var urlText by remember { mutableStateOf("") }
     var appState by remember { mutableStateOf<AppState>(AppState.Idle) }
     var pages by remember { mutableStateOf(listOf<PageItem>()) }
+    var crawledSiteUrl by remember { mutableStateOf("") }
 
     val webView = remember {
         WebView(context).apply {
@@ -136,6 +137,7 @@ fun SiteToPdfApp() {
                                         )
                                     } else {
                                         pages = discovered.map { PageItem(it.url, it.title, true) }
+                                        crawledSiteUrl = normalized
                                         appState = AppState.Crawled(pages)
                                     }
                                 }
@@ -216,11 +218,14 @@ fun SiteToPdfApp() {
                                     return@Button
                                 }
                                 scope.launch {
-                                    val result = generatePdf(context, webView, selected) { progress, text ->
+                                    val result = generatePdf(context, webView, selected, crawledSiteUrl) { progress, text ->
                                         appState = AppState.Generating(progress, text)
                                     }
-                                    appState = if (result != null) AppState.Done(result)
-                                    else AppState.Error("No se pudo generar el PDF.")
+                                    appState = if (result != null) AppState.Done(result.first, result.second)
+                                    else AppState.Error(
+                                        "No se pudo generar el PDF. Puede haber sido un problema de memoria " +
+                                            "(sitios muy grandes) o de conexión al descargar imágenes."
+                                    )
                                 }
                             },
                             modifier = Modifier.fillMaxWidth()
@@ -259,9 +264,15 @@ fun SiteToPdfApp() {
                             Spacer(Modifier.height(12.dp))
                             Text("¡PDF generado con éxito!", style = MaterialTheme.typography.titleMedium)
                             Spacer(Modifier.height(4.dp))
-                            Text(state.file.name, style = MaterialTheme.typography.bodySmall)
+                            Text(state.displayName, style = MaterialTheme.typography.bodySmall)
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                "Guardado en Descargas",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
                             Spacer(Modifier.height(20.dp))
-                            Button(onClick = { sharePdf(context, state.file) }, modifier = Modifier.fillMaxWidth()) {
+                            Button(onClick = { sharePdf(context, state.uri) }, modifier = Modifier.fillMaxWidth()) {
                                 Icon(Icons.Default.Share, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
                                 Text("Compartir / Abrir PDF")
